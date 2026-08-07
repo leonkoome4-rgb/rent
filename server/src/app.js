@@ -24,9 +24,7 @@ app.get('/api/ping', (req, res) => {
 app.get(
   '/api/health',
   asyncHandler(async (req, res) => {
-    console.error('[health] querying prisma.user.count()...');
     const userCount = await prisma.user.count();
-    console.error('[health] query returned', userCount);
     res.json({ ok: true, landlords: userCount });
   })
 );
