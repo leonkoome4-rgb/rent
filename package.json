@@ -2,8 +2,5 @@
   "name": "renttrack",
   "version": "1.0.0",
   "private": true,
-  "description": "Vercel deployment root — wires the Express API (server/) into a serverless function and builds the static client (client/).",
-  "dependencies": {
-    "serverless-http": "^4.0.0"
-  }
+  "description": "Vercel deployment root — the api/ directory re-exports the Express app from server/src/app.js as a serverless function; the actual build output is client/dist."
 }
