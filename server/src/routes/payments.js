@@ -82,7 +82,7 @@ router.get(
       return res.json({ status: 'failed' });
     }
 
-    const result = await mpesa.stkQuery(checkoutId);
+    const result = await mpesa.stkQuery(checkoutId, { initiatedAt: pending.createdAt });
 
     if (result.status === 'success') {
       const { payment, periodsCovered } = await applyPayment({

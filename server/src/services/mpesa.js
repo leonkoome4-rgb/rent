@@ -1,15 +1,20 @@
-const MPESA_ENV = process.env.MPESA_ENV || 'mock';
+const crypto = require('crypto');
 
-// In-memory store for mock mode: checkoutId -> { status, receipt, amount, phone, accountRef, createdAt }
-const mockTransactions = new Map();
+const MPESA_ENV = process.env.MPESA_ENV || 'mock';
+const MOCK_DELAY_MS = 4000;
 
 let cachedToken = null; // { token, expiresAt } — sandbox/live only
 
-function randomReceipt() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let s = 'MOCK';
-  for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return s;
+// Deterministic, not random: the same checkoutId always derives the same receipt,
+// with no shared state needed. This matters on serverless, where a background
+// setTimeout scheduled during one invocation has no guarantee of surviving to run
+// after the response is sent, and a separate poll request may land on a completely
+// different (cold) instance with no memory of an in-memory Map. Readiness itself is
+// computed from elapsed wall-clock time since the push was initiated (passed in by
+// the caller from the Payment row's own createdAt) rather than a scheduled callback.
+function mockReceiptFor(checkoutId) {
+  const hash = crypto.createHash('sha256').update(checkoutId).digest('hex').toUpperCase();
+  return `MOCK${hash.slice(0, 6)}`;
 }
 
 function randomCheckoutId() {
@@ -54,16 +59,7 @@ function darajaPassword(timestamp) {
  */
 async function stkPush({ phone, amount, accountRef }) {
   if (MPESA_ENV === 'mock') {
-    const checkoutId = randomCheckoutId();
-    mockTransactions.set(checkoutId, { status: 'PENDING', phone, amount, accountRef, createdAt: Date.now() });
-    setTimeout(() => {
-      const tx = mockTransactions.get(checkoutId);
-      if (tx && tx.status === 'PENDING') {
-        tx.status = 'SUCCESS';
-        tx.receipt = randomReceipt();
-      }
-    }, 4000);
-    return { checkoutId };
+    return { checkoutId: randomCheckoutId() };
   }
 
   const base = MPESA_ENV === 'live' ? 'https://api.safaricom.co.ke' : 'https://sandbox.safaricom.co.ke';
@@ -96,15 +92,16 @@ async function stkPush({ phone, amount, accountRef }) {
 }
 
 /**
- * Polls the status of a previously-initiated STK push.
+ * Polls the status of a previously-initiated STK push. In mock mode, pass
+ * initiatedAt (the Payment row's createdAt) so readiness can be computed from
+ * elapsed time rather than any stored/scheduled state.
  * Returns { status: 'pending' | 'success' | 'failed', receipt?, amount?, phone? }.
  */
-async function stkQuery(checkoutId) {
+async function stkQuery(checkoutId, { initiatedAt } = {}) {
   if (MPESA_ENV === 'mock') {
-    const tx = mockTransactions.get(checkoutId);
-    if (!tx) return { status: 'failed' };
-    if (tx.status === 'PENDING') return { status: 'pending' };
-    return { status: 'success', receipt: tx.receipt, amount: tx.amount, phone: tx.phone };
+    const startedAt = initiatedAt ? new Date(initiatedAt).getTime() : Date.now();
+    if (Date.now() - startedAt < MOCK_DELAY_MS) return { status: 'pending' };
+    return { status: 'success', receipt: mockReceiptFor(checkoutId) };
   }
 
   const base = MPESA_ENV === 'live' ? 'https://api.safaricom.co.ke' : 'https://sandbox.safaricom.co.ke';
