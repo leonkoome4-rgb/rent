@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User { // landlord or agent
+  id         String     @id @default(cuid())
+  name       String
+  phone      String     @unique
+  email      String?    @unique
+  password   String
+  role       Role       @default(LANDLORD)
+  properties Property[]
+  createdAt  DateTime   @default(now())
+}
+
+enum Role {
+  LANDLORD
+  AGENT
+}
+
+model Property { // a "group" of payers — a rental property, a school class, a members' group, etc.
+  id        String           @id @default(cuid())
+  name      String
+  category  PropertyCategory @default(RENT)
+  location  String?
+  paybill   String? // landlord's own Paybill/Till for C2B
+  owner     User             @relation(fields: [ownerId], references: [id])
+  ownerId   String
+  units     Unit[]
+  createdAt DateTime         @default(now())
+}
+
+enum PropertyCategory {
+  RENT
+  SCHOOL_FEES
+  MEMBERSHIP
+  OTHER
+}
+
+model Unit {
+  id               String   @id @default(cuid())
+  label            String // e.g. "B4" — also the house/unit number and the M-Pesa account reference
+  rentAmount       Int
+  waterCharge      Int      @default(0)
+  electricityCharge Int     @default(0)
+  trashCharge      Int      @default(0)
+  property         Property @relation(fields: [propertyId], references: [id])
+  propertyId       String
+  lease            Lease?
+
+  @@unique([propertyId, label])
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String   @unique // used for STK push AND tenant login
+  email     String?
+  password  String? // tenant portal login
+  idNumber  String?
+  note      String? // free-text remark the landlord can leave (e.g. "pays late, follow up by SMS")
+  lease     Lease?
+  createdAt DateTime @default(now())
+}
+
+model Lease {
+  id         String        @id @default(cuid())
+  unit       Unit          @relation(fields: [unitId], references: [id])
+  unitId     String        @unique
+  tenant     Tenant        @relation(fields: [tenantId], references: [id])
+  tenantId   String        @unique
+  rentAmount Int
+  dueDay     Int           @default(5)
+  startDate  DateTime
+  active     Boolean       @default(true)
+  invoices   RentInvoice[]
+}
+
+model RentInvoice {
+  id                String        @id @default(cuid())
+  lease             Lease         @relation(fields: [leaseId], references: [id])
+  leaseId           String
+  period            String // "2026-07"
+  rentAmount        Int           @default(0) // breakdown snapshot, for display
+  waterCharge       Int           @default(0)
+  electricityCharge Int           @default(0)
+  trashCharge       Int           @default(0)
+  amountDue         Int // rentAmount + waterCharge + electricityCharge + trashCharge
+  amountPaid        Int           @default(0)
+  status            InvoiceStatus @default(UNPAID)
+  dueDate           DateTime
+  payments          Payment[]
+
+  @@unique([leaseId, period])
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+model Payment {
+  id           String       @id @default(cuid())
+  invoice      RentInvoice? @relation(fields: [invoiceId], references: [id])
+  invoiceId    String?
+  amount       Int
+  phone        String
+  mpesaReceipt String?      @unique // idempotency key
+  checkoutId   String? // STK CheckoutRequestID
+  accountRef   String? // C2B account number (unit label)
+  method       PayMethod    @default(STK)
+  status       PayStatus    @default(PENDING)
+  rawPayload   Json?
+  createdAt    DateTime     @default(now())
+}
+
+enum PayMethod {
+  STK // M-Pesa, tenant or landlord-triggered push
+  C2B // M-Pesa Paybill, auto-reconciled
+  CASH // landlord marks paid after collecting cash
+  BANK // landlord marks paid after a bank deposit/transfer
+}
+
+enum PayStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model ReminderLog {
+  id       String   @id @default(cuid())
+  tenantId String
+  message  String
+  channel  String   @default("SMS")
+  sentAt   DateTime @default(now())
+}
