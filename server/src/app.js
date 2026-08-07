@@ -17,10 +17,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get('/api/ping', (req, res) => {
+  res.json({ ok: true, ping: 'pong' });
+});
+
 app.get(
   '/api/health',
   asyncHandler(async (req, res) => {
+    console.error('[health] querying prisma.user.count()...');
     const userCount = await prisma.user.count();
+    console.error('[health] query returned', userCount);
     res.json({ ok: true, landlords: userCount });
   })
 );
