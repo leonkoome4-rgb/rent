@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext';
 import { Topbar } from '../components/Topbar';
 import { StatusPill } from '../components/StatusPill';
 import { Icon } from '../components/Icon';
+import { ChangePinCard } from '../components/ChangePinCard';
 import { formatKES, formatPeriod, formatDateTime } from '../format';
 import { categoryMeta } from '../categories';
 
@@ -11,7 +12,7 @@ const POLL_INTERVAL_MS = 3000;
 const TIMEOUT_MS = 60000;
 
 export function TenantHome() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [invoices, setInvoices] = useState(null);
   const [payments, setPayments] = useState([]);
   const [error, setError] = useState('');
@@ -108,6 +109,7 @@ export function TenantHome() {
     <div>
       <Topbar />
       <div className="page-body">
+        {user?.mustChangePassword && <ChangePinCard />}
         {error && <p className="error-text">{error}</p>}
 
         {payState === 'idle' && invoices && (

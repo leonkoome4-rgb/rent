@@ -1,100 +1,23 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { Topbar } from '../components/Topbar';
+import { LANDLORD_NAV } from '../nav';
 import { Icon } from '../components/Icon';
-import { CATEGORIES, categoryMeta } from '../categories';
+import { InviteShare } from '../components/InviteShare';
+import { EmptyState } from '../components/Illustration';
+import { categoryMeta } from '../categories';
 import { formatKES } from '../format';
 
-const NAV_LINKS = [
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/board', label: 'Board' },
-  { to: '/groups', label: 'Groups' },
-];
 
-function NewGroupForm({ onCreated, onCancel }) {
-  const { token } = useAuth();
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState('RENT');
-  const [location, setLocation] = useState('');
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError('');
-    setSaving(true);
-    try {
-      await api.createGroup(token, { name, category, location: location || undefined });
-      onCreated();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <form className="card" onSubmit={handleSubmit} style={{ marginBottom: 20 }}>
-      <h4>New group</h4>
-      {error && <p className="error-text">{error}</p>}
-
-      <div className="field">
-        <label>What kind of group is this?</label>
-        <div className="category-picker">
-          {Object.entries(CATEGORIES).map(([key, meta]) => (
-            <button
-              type="button"
-              key={key}
-              className={`category-option ${category === key ? 'selected' : ''}`}
-              onClick={() => setCategory(key)}
-            >
-              <span className="category-icon" style={{ color: meta.color }}>
-                <Icon name={meta.icon} size={15} />
-              </span>
-              {meta.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="field">
-        <label htmlFor="group-name">Group name</label>
-        <input
-          id="group-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={
-            category === 'RENT' ? 'Kileleshwa Court' : category === 'SCHOOL_FEES' ? 'Form 2 West' : 'Baraka Chama'
-          }
-          autoFocus
-        />
-      </div>
-
-      <div className="field">
-        <label htmlFor="group-location">Location / note (optional)</label>
-        <input id="group-location" value={location} onChange={(e) => setLocation(e.target.value)} />
-      </div>
-
-      <div style={{ display: 'flex', gap: 10 }}>
-        <button className="btn-primary" type="submit" disabled={saving || !name}>
-          {saving ? 'Creating…' : 'Create group'}
-        </button>
-        <button type="button" className="btn-ghost" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function AddMemberForm({ group, onAdded, onCancel }) {
+function AddMemberForm({ group, prefill, onAdded, onCancel }) {
   const { token } = useAuth();
   const meta = categoryMeta(group.category);
   const [tenantName, setTenantName] = useState('');
   const [tenantPhone, setTenantPhone] = useState('');
-  const [label, setLabel] = useState('');
-  const [amount, setAmount] = useState('');
+  const [label, setLabel] = useState(prefill?.label || '');
+  const [amount, setAmount] = useState(prefill?.amount ? String(prefill.amount) : '');
   const [waterCharge, setWaterCharge] = useState('');
   const [electricityCharge, setElectricityCharge] = useState('');
   const [trashCharge, setTrashCharge] = useState('');
@@ -107,7 +30,7 @@ function AddMemberForm({ group, onAdded, onCancel }) {
     setError('');
     setSaving(true);
     try {
-      await api.addMember(token, group.id, {
+      const res = await api.addMember(token, group.id, {
         tenantName,
         tenantPhone,
         label,
@@ -117,7 +40,7 @@ function AddMemberForm({ group, onAdded, onCancel }) {
         trashCharge: meta.supportsUtilities ? Number(trashCharge) || 0 : 0,
         note: note || undefined,
       });
-      onAdded();
+      onAdded(res.pin ? { name: `${tenantName} · ${label}`, phone: tenantPhone, pin: res.pin, message: res.inviteMessage, whatsapp: res.whatsapp } : null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -137,7 +60,7 @@ function AddMemberForm({ group, onAdded, onCancel }) {
         </div>
         <div className="field">
           <label>Phone (M-Pesa)</label>
-          <input value={tenantPhone} onChange={(e) => setTenantPhone(e.target.value)} placeholder="2547XXXXXXXX" />
+          <input value={tenantPhone} onChange={(e) => setTenantPhone(e.target.value)} placeholder="0712 345 678" inputMode="tel" />
         </div>
       </div>
 
@@ -182,7 +105,7 @@ function AddMemberForm({ group, onAdded, onCancel }) {
           Cancel
         </button>
       </div>
-      <p className="field-hint">New members can log in to the tenant portal with this phone number and password "tenant123".</p>
+      <p className="field-hint">They'll get a one-time PIN to log in. You can share it by WhatsApp right after adding them.</p>
     </form>
   );
 }
@@ -191,9 +114,9 @@ export function Groups() {
   const { token } = useAuth();
   const [groups, setGroups] = useState(null);
   const [error, setError] = useState('');
-  const [showNewGroup, setShowNewGroup] = useState(false);
   const [expandedGroupId, setExpandedGroupId] = useState(null);
-  const [addingMemberTo, setAddingMemberTo] = useState(null);
+  const [addingMemberTo, setAddingMemberTo] = useState(null); // { groupId, prefill }
+  const [invite, setInvite] = useState(null); // { groupId, ...InviteShare props }
   const [filter, setFilter] = useState('ALL');
 
   function load() {
@@ -205,8 +128,19 @@ export function Groups() {
   const categoriesPresent = groups ? [...new Set(groups.map((g) => g.category))] : [];
   const visibleGroups = groups ? (filter === 'ALL' ? groups : groups.filter((g) => g.category === filter)) : null;
 
+  async function handleResetPin(group, m) {
+    if (!window.confirm(`Give ${m.tenantName} a new PIN? Their old one stops working.`)) return;
+    try {
+      const res = await api.resetPin(token, group.id, m.unitId);
+      setInvite({ groupId: group.id, name: `${m.tenantName} · ${m.label}`, phone: m.tenantPhone, pin: res.pin, message: res.inviteMessage, whatsapp: res.whatsapp });
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function handleRemoveMember(groupId, unitId, tenantName) {
-    if (!window.confirm(`Remove ${tenantName}? They'll lose access and drop off the board. Past payments are kept.`)) return;
+    if (!window.confirm(`${tenantName} is moving out? They'll lose access and the unit becomes vacant. Past payments are kept.`)) return;
     try {
       await api.removeMember(token, groupId, unitId);
       load();
@@ -217,7 +151,7 @@ export function Groups() {
 
   return (
     <div>
-      <Topbar links={NAV_LINKS} />
+      <Topbar links={LANDLORD_NAV} />
       <div className="page-body">
         <div className="page-header">
           <div>
@@ -228,11 +162,9 @@ export function Groups() {
             <button className="btn-ghost print-btn" onClick={() => window.print()}>
               <Icon name="printer" size={14} /> Print
             </button>
-            {!showNewGroup && (
-              <button className="btn-primary" style={{ width: 'auto', padding: '10px 20px' }} onClick={() => setShowNewGroup(true)}>
-                + New group
-              </button>
-            )}
+            <Link className="btn-primary" style={{ width: 'auto', padding: '10px 20px' }} to="/onboarding">
+              + New group
+            </Link>
           </div>
         </div>
 
@@ -242,23 +174,24 @@ export function Groups() {
 
         {error && <p className="error-text">{error}</p>}
 
-        {showNewGroup && (
-          <NewGroupForm
-            onCreated={() => {
-              setShowNewGroup(false);
-              load();
-            }}
-            onCancel={() => setShowNewGroup(false)}
-          />
-        )}
 
-        {groups && groups.length === 0 && !showNewGroup && (
+        {groups && groups.length === 0 && (
           <div className="card">
-            <p className="empty-state">No groups yet. Create one to start adding tenants, students, or members.</p>
+            <EmptyState
+              art="building"
+              title="Nothing here yet"
+              action={
+                <Link className="btn-primary" style={{ width: 'auto', padding: '10px 20px' }} to="/onboarding">
+                  Set up rent, school fees or a chama
+                </Link>
+              }
+            >
+              Add everyone at once, then share each person's PIN by WhatsApp.
+            </EmptyState>
           </div>
         )}
 
-        {categoriesPresent.length > 1 && !showNewGroup && (
+        {categoriesPresent.length > 1 && (
           <div className="filter-tabs">
             <button className={`filter-tab ${filter === 'ALL' ? 'active' : ''}`} onClick={() => setFilter('ALL')}>
               All
@@ -291,6 +224,8 @@ export function Groups() {
                         {meta.label}
                         {group.location ? ` · ${group.location}` : ''} · {group.memberCount} {meta.memberNoun}
                         {group.memberCount === 1 ? '' : 's'}
+                        {group.vacant.length > 0 ? ` · ${group.vacant.length} vacant` : ''}
+                        {group.paybill ? ` · Paybill ${group.paybill}` : ''}
                       </div>
                     </div>
                   </div>
@@ -315,7 +250,11 @@ export function Groups() {
                               {m.note && <div className="member-note">{m.note}</div>}
                             </div>
                             <div className="member-row-right">
+                              {m.pinPending && <span className="pin-pending-tag" title="Hasn't logged in and set their own PIN yet">PIN not used</span>}
                               <span className="board-unit-label">{formatKES(m.amount)}</span>
+                              <button className="member-remove-btn" title={`New PIN for ${m.tenantName}`} onClick={() => handleResetPin(group, m)}>
+                                <Icon name="key" size={13} />
+                              </button>
                               <button
                                 className="member-remove-btn"
                                 title={`Remove ${m.tenantName}`}
@@ -329,19 +268,55 @@ export function Groups() {
                       </div>
                     )}
 
-                    {addingMemberTo === group.id ? (
+                    {invite?.groupId === group.id && (
+                      <div className="invite-callout">
+                        <p>Share this PIN so they can log in. They'll choose their own afterwards.</p>
+                        <InviteShare {...invite} />
+                        <button className="link-btn" onClick={() => setInvite(null)}>
+                          Done
+                        </button>
+                      </div>
+                    )}
+
+                    {group.vacant.length > 0 && (
+                      <div className="vacant-list">
+                        <div className="modal-section-title">Vacant</div>
+                        <div className="vacant-chips">
+                          {group.vacant.map((v) => (
+                            <button
+                              key={v.unitId}
+                              className="vacant-chip"
+                              title={`Add a ${meta.memberNoun} to ${v.label}`}
+                              onClick={() => setAddingMemberTo({ groupId: group.id, prefill: v })}
+                            >
+                              {v.label} <span>+</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {addingMemberTo?.groupId === group.id ? (
                       <AddMemberForm
+                        key={addingMemberTo.prefill?.unitId || 'new'}
                         group={group}
-                        onAdded={() => {
+                        prefill={addingMemberTo.prefill}
+                        onAdded={(inv) => {
                           setAddingMemberTo(null);
+                          if (inv) setInvite({ groupId: group.id, ...inv });
                           load();
                         }}
                         onCancel={() => setAddingMemberTo(null)}
                       />
                     ) : (
-                      <button className="btn-ghost" onClick={() => setAddingMemberTo(group.id)}>
-                        + Add {meta.memberNoun}
-                      </button>
+                      <div className="group-card-actions">
+                        <button className="btn-ghost" onClick={() => setAddingMemberTo({ groupId: group.id })}>
+                          + Add {meta.memberNoun}
+                        </button>
+                        <Link className="btn-ghost" to={`/onboarding?property=${group.id}`}>
+                          + Add many at once
+                        </Link>
+                      </div>
                     )}
                   </div>
                 )}

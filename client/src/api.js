@@ -24,6 +24,8 @@ export const api = {
   tenantLogin: (phone, password) =>
     request('/auth/tenant-login', { method: 'POST', body: { phone, password } }),
   whoami: (token) => request('/auth/whoami', { token }),
+  changePassword: (token, currentPassword, newPassword) =>
+    request('/auth/change-password', { method: 'POST', body: { currentPassword, newPassword }, token }),
 
   // Landlord
   dashboard: (token) => request('/dashboard', { token }),
@@ -40,11 +42,22 @@ export const api = {
   createGroup: (token, payload) => request('/properties', { method: 'POST', body: payload, token }),
   addMember: (token, groupId, payload) =>
     request(`/properties/${groupId}/members`, { method: 'POST', body: payload, token }),
+  bulkAddUnits: (token, groupId, rows) =>
+    request(`/properties/${groupId}/bulk`, { method: 'POST', body: { rows }, token }),
+  resetPin: (token, groupId, unitId) =>
+    request(`/properties/${groupId}/members/${unitId}/reset-pin`, { method: 'POST', token }),
   removeMember: (token, groupId, unitId) =>
     request(`/properties/${groupId}/members/${unitId}`, { method: 'DELETE', token }),
   tenantStatement: (token, tenantId) => request(`/tenants/${tenantId}/statement`, { token }),
   updateTenantNote: (token, tenantId, note) =>
     request(`/tenants/${tenantId}`, { method: 'PATCH', body: { note }, token }),
+
+  outbox: (token) => request('/outbox', { token }),
+  remindAllUnpaid: (token) => request('/reminders/send', { method: 'POST', token }),
+  unmatchedPayments: (token) => request('/unmatched', { token }),
+  assignPayment: (token, paymentId, unitId) =>
+    request(`/unmatched/${paymentId}/assign`, { method: 'POST', body: { unitId }, token }),
+  simulatePaybill: (token, payload) => request('/mpesa/simulate-c2b', { method: 'POST', body: payload, token }),
 
   // Tenant
   myInvoices: (token) => request('/me/invoices', { token }),

@@ -36,6 +36,10 @@ export function AuthProvider({ children }) {
     setUser(tenantValue);
   }
 
+  function updateUser(patch) {
+    setUser((u) => (u ? { ...u, ...patch } : u));
+  }
+
   function logout() {
     localStorage.removeItem('renttrack_token');
     setToken(null);
@@ -43,7 +47,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ token, user, loading, loginLandlord, loginTenant, logout }}>
+    <AuthContext.Provider value={{ token, user, loading, loginLandlord, loginTenant, updateUser, logout }}>
       {children}
     </AuthContext.Provider>
   );

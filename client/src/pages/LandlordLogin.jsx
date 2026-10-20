@@ -29,7 +29,8 @@ export function LandlordLogin() {
 
   return (
     <div className="auth-page">
-      <div className="auth-visual">
+      <div className="auth-visual auth-visual-photo">
+        <img src="/images/hero-nairobi.webp" alt="" />
         <div className="auth-visual-brand">RentTrack</div>
         <div className="auth-visual-copy">
           <h2>Stop chasing rent. Let the board fill itself in.</h2>
@@ -63,7 +64,7 @@ export function LandlordLogin() {
                 id="identifier"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="254712000001"
+                placeholder="0712 345 678 or email"
                 autoFocus
               />
             </div>
@@ -83,6 +84,9 @@ export function LandlordLogin() {
           </form>
 
           <p className="auth-switch">
+            New landlord? <Link to="/register">Create an account</Link>
+          </p>
+          <p className="auth-switch" style={{ marginTop: 8 }}>
             Tenant, student, or member? <Link to="/tenant-login">Log in here</Link>
           </p>
         </div>

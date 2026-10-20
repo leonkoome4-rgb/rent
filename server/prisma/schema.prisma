@@ -52,7 +52,7 @@ model Unit {
   trashCharge      Int      @default(0)
   property         Property @relation(fields: [propertyId], references: [id])
   propertyId       String
-  lease            Lease?
+  leases           Lease[]
 
   @@unique([propertyId, label])
 }
@@ -65,21 +65,27 @@ model Tenant {
   password  String? // tenant portal login
   idNumber  String?
   note      String? // free-text remark the landlord can leave (e.g. "pays late, follow up by SMS")
-  lease     Lease?
+  mustChangePassword Boolean @default(false) // set when the landlord issues a one-time PIN
+  leases    Lease[]
   createdAt DateTime @default(now())
 }
 
 model Lease {
   id         String        @id @default(cuid())
+  // A unit/tenant keeps its past (inactive) leases for statements; at most one is
+  // active at a time, enforced in the routes that create leases.
   unit       Unit          @relation(fields: [unitId], references: [id])
-  unitId     String        @unique
+  unitId     String
   tenant     Tenant        @relation(fields: [tenantId], references: [id])
-  tenantId   String        @unique
+  tenantId   String
   rentAmount Int
   dueDay     Int           @default(5)
   startDate  DateTime
   active     Boolean       @default(true)
   invoices   RentInvoice[]
+
+  @@index([unitId])
+  @@index([tenantId])
 }
 
 model RentInvoice {
@@ -115,6 +121,7 @@ model Payment {
   mpesaReceipt String?      @unique // idempotency key
   checkoutId   String? // STK CheckoutRequestID
   accountRef   String? // C2B account number (unit label)
+  shortcode    String? // Paybill/Till the money arrived on — scopes unmatched payments to a landlord
   method       PayMethod    @default(STK)
   status       PayStatus    @default(PENDING)
   rawPayload   Json?
@@ -132,12 +139,20 @@ enum PayStatus {
   PENDING
   SUCCESS
   FAILED
+  UNMATCHED // money arrived (C2B) but the account number matched no active unit; landlord assigns it
 }
 
-model ReminderLog {
-  id       String   @id @default(cuid())
-  tenantId String
-  message  String
-  channel  String   @default("SMS")
-  sentAt   DateTime @default(now())
+model ReminderLog { // every outgoing message (SMS today, WhatsApp later) — doubles as the in-app Outbox
+  id         String   @id @default(cuid())
+  tenantId   String?
+  landlordId String?
+  phone      String?
+  kind       String   @default("REMINDER") // INVITE | RECEIPT | REMINDER | PIN_RESET
+  message    String
+  channel    String   @default("SMS")
+  status     String   @default("MOCK") // MOCK (not actually sent) | SENT | FAILED
+  sentAt     DateTime @default(now())
+
+  @@index([landlordId, sentAt])
+  @@index([tenantId, kind, sentAt])
 }

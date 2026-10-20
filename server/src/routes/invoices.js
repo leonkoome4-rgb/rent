@@ -3,6 +3,7 @@ const prisma = require('../prisma');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { applyPayment } = require('../services/reconcile');
+const { parseAmount } = require('../utils/validate');
 const mpesa = require('../services/mpesa');
 
 const router = express.Router();
@@ -83,7 +84,7 @@ router.post(
 
     const method = ['CASH', 'BANK'].includes(req.body?.method) ? req.body.method : 'CASH';
     const remaining = invoice.amountDue - invoice.amountPaid;
-    const amount = req.body?.amount ? Number(req.body.amount) : remaining;
+    const amount = req.body?.amount ? parseAmount(req.body.amount) : remaining;
     if (!(amount > 0)) return res.status(400).json({ error: 'Amount must be greater than zero' });
 
     const result = await applyPayment({

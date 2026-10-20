@@ -24,9 +24,9 @@ router.get(
 
     const units = await prisma.unit.findMany({
       where: { property: { ownerId: req.user.id } },
-      include: { lease: true },
+      include: { leases: { where: { active: true }, select: { id: true } } },
     });
-    const occupied = units.filter((u) => u.lease?.active).length;
+    const occupied = units.filter((u) => u.leases.length).length;
     const occupancy = units.length ? Math.round((occupied / units.length) * 100) : 0;
 
     const recentPayments = await prisma.payment.findMany({

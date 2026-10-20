@@ -2,13 +2,11 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { Topbar } from '../components/Topbar';
+import { LANDLORD_NAV } from '../nav';
+import { Link } from 'react-router-dom';
+import { EmptyState } from '../components/Illustration';
 import { formatKES, formatDateTime } from '../format';
 
-const NAV_LINKS = [
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/board', label: 'Board' },
-  { to: '/groups', label: 'Groups' },
-];
 
 export function Dashboard() {
   const { token } = useAuth();
@@ -21,7 +19,7 @@ export function Dashboard() {
 
   return (
     <div>
-      <Topbar links={NAV_LINKS} />
+      <Topbar links={LANDLORD_NAV} />
       <div className="page-body">
         <div className="page-header">
           <div>
@@ -32,7 +30,23 @@ export function Dashboard() {
 
         {error && <p className="error-text">{error}</p>}
 
-        {data && (
+        {data && data.unitsTotal === 0 && (
+          <div className="card">
+            <EmptyState
+              art="building"
+              title="Let's set up what you collect"
+              action={
+                <Link className="btn-primary" style={{ width: 'auto', padding: '10px 22px' }} to="/onboarding">
+                  Rent, school fees or chama
+                </Link>
+              }
+            >
+              Add everyone who pays you in one go. You'll see who has paid here as soon as money comes in.
+            </EmptyState>
+          </div>
+        )}
+
+        {data && data.unitsTotal > 0 && (
           <>
             <div className="metric-row">
               <div className="metric-card">
@@ -82,7 +96,9 @@ export function Dashboard() {
             <div className="card">
               <h4>Recent payments</h4>
               {data.recentPayments.length === 0 ? (
-                <p className="empty-state">No payments recorded yet this month.</p>
+                <EmptyState art="phonePay" title="No payments yet this month">
+                  Paybill payments, M-Pesa prompts and cash you record will show up here.
+                </EmptyState>
               ) : (
                 <div>
                   {data.recentPayments.map((p) => (

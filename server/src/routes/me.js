@@ -13,7 +13,7 @@ router.get(
     if (req.user.role === 'TENANT') {
       const tenant = await prisma.tenant.findUnique({ where: { id: req.user.id } });
       if (!tenant) return res.status(404).json({ error: 'Not found' });
-      return res.json({ id: tenant.id, name: tenant.name, phone: tenant.phone, email: tenant.email, role: 'TENANT' });
+      return res.json({ id: tenant.id, name: tenant.name, phone: tenant.phone, email: tenant.email, role: 'TENANT', mustChangePassword: tenant.mustChangePassword });
     }
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });

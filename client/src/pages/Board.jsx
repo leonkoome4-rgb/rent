@@ -2,17 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { Topbar } from '../components/Topbar';
+import { LANDLORD_NAV } from '../nav';
 import { BoardCell } from '../components/BoardCell';
 import { Icon } from '../components/Icon';
 import { TenantDetailModal } from '../components/TenantDetailModal';
 import { formatPeriod } from '../format';
 import { categoryMeta } from '../categories';
 
-const NAV_LINKS = [
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/board', label: 'Board' },
-  { to: '/groups', label: 'Groups' },
-];
 
 export function Board() {
   const { token } = useAuth();
@@ -39,7 +35,7 @@ export function Board() {
 
   return (
     <div>
-      <Topbar links={NAV_LINKS} />
+      <Topbar links={LANDLORD_NAV} />
       <div className="page-body">
         <div className="page-header">
           <div>

@@ -17,8 +17,8 @@ export function TenantLogin() {
     setError('');
     setLoading(true);
     try {
-      const { token, tenant } = await api.tenantLogin(phone, password);
-      loginTenant(token, tenant);
+      const { token, tenant, mustChangePassword } = await api.tenantLogin(phone, password);
+      loginTenant(token, { ...tenant, mustChangePassword });
       navigate('/home');
     } catch (err) {
       setError(err.message);
@@ -29,7 +29,8 @@ export function TenantLogin() {
 
   return (
     <div className="auth-page">
-      <div className="auth-visual">
+      <div className="auth-visual auth-visual-photo">
+        <img src="/images/tenant-phone.webp" alt="" />
         <div className="auth-visual-brand">RentTrack</div>
         <div className="auth-visual-copy">
           <h2>See what you owe. Pay it in one tap.</h2>
@@ -60,12 +61,13 @@ export function TenantLogin() {
                 id="phone"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="254712000011"
+                placeholder="0712 345 678"
+                inputMode="tel"
                 autoFocus
               />
             </div>
             <div className="field">
-              <label htmlFor="password">Password</label>
+              <label htmlFor="password">PIN or password</label>
               <input
                 id="password"
                 type="password"
@@ -79,6 +81,9 @@ export function TenantLogin() {
             </button>
           </form>
 
+          <p className="field-hint" style={{ textAlign: 'center' }}>
+            Your landlord sends your PIN by WhatsApp or SMS. Lost it? Ask them to reset it.
+          </p>
           <p className="auth-switch">
             Landlord or agent? <Link to="/login">Log in here</Link>
           </p>

@@ -1,5 +1,6 @@
 const prisma = require('../prisma');
 const { currentPeriod, ensureInvoiceForPeriod } = require('./invoices');
+const { sendReceipt } = require('./sms');
 
 const MAX_PERIODS_PER_PAYMENT = 24; // safety cap against a fat-fingered amount cascading forever
 
@@ -9,22 +10,39 @@ function nextPeriodOf(period) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-async function resolveActiveLease({ tenantId, accountRef }) {
+const LEASE_INCLUDE = { unit: { include: { property: true } }, tenant: true };
+
+const normalizeRef = (ref) => String(ref || '').replace(/\s+/g, '').toUpperCase();
+
+/**
+ * Finds the active lease a payment belongs to. By tenant when we know who paid
+ * (STK, manual); otherwise by the account number typed on a Paybill payment,
+ * scoped to the Paybill it arrived on so two landlords who both have a "B4"
+ * never collide. Falls back to the payer's phone number. Returns null when
+ * nothing (or more than one lease) matches, so ambiguous money is parked as
+ * UNMATCHED rather than credited to the wrong tenant.
+ */
+async function resolveActiveLease({ tenantId, accountRef, shortcode, phone }) {
   if (tenantId) {
-    const lease = await prisma.lease.findFirst({
-      where: { tenantId, active: true },
-      include: { unit: true, tenant: true },
-    });
-    return lease;
+    return prisma.lease.findFirst({ where: { tenantId, active: true }, include: LEASE_INCLUDE });
   }
+  const propertyScope = shortcode ? { property: { paybill: String(shortcode) } } : {};
   if (accountRef) {
-    const unit = await prisma.unit.findFirst({
-      where: { label: accountRef },
-      include: { lease: { include: { tenant: true } } },
+    const ref = normalizeRef(accountRef);
+    const leases = await prisma.lease.findMany({
+      where: { active: true, unit: propertyScope },
+      include: LEASE_INCLUDE,
     });
-    if (unit?.lease?.active) {
-      return { ...unit.lease, unit, tenant: unit.lease.tenant };
-    }
+    const matches = leases.filter((l) => normalizeRef(l.unit.label) === ref);
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) return null;
+  }
+  if (phone) {
+    const matches = await prisma.lease.findMany({
+      where: { active: true, tenant: { phone: String(phone) }, unit: propertyScope },
+      include: LEASE_INCLUDE,
+    });
+    if (matches.length === 1) return matches[0];
   }
   return null;
 }
@@ -54,6 +72,9 @@ async function applyPayment({
   checkoutId,
   existingPaymentId,
   targetInvoiceId,
+  shortcode,
+  rawPayload,
+  silent, // skip the receipt SMS (e.g. seeding)
 }) {
   if (existingPaymentId) {
     const existingRow = await prisma.payment.findUnique({ where: { id: existingPaymentId } });
@@ -61,10 +82,11 @@ async function applyPayment({
   }
   if (receipt) {
     const existing = await prisma.payment.findUnique({ where: { mpesaReceipt: receipt } });
-    if (existing) return { payment: existing, payments: [existing], duplicate: true, matched: true };
+    // When assigning an UNMATCHED payment, the receipt already lives on that same row.
+    if (existing && existing.id !== existingPaymentId) return { payment: existing, payments: [existing], duplicate: true, matched: true };
   }
 
-  const lease = await resolveActiveLease({ tenantId, accountRef });
+  const lease = await resolveActiveLease({ tenantId, accountRef, shortcode, phone: tenantId ? null : phone });
 
   if (!lease) {
     const data = {
@@ -73,8 +95,10 @@ async function applyPayment({
       mpesaReceipt: receipt || null,
       checkoutId: checkoutId || null,
       accountRef: accountRef || null,
+      shortcode: shortcode ? String(shortcode) : null,
+      rawPayload: rawPayload || undefined,
       method,
-      status: 'SUCCESS',
+      status: 'UNMATCHED',
     };
     const payment = existingPaymentId
       ? await prisma.payment.update({ where: { id: existingPaymentId }, data })
@@ -116,6 +140,8 @@ async function applyPayment({
       mpesaReceipt: isFirst ? receipt || null : null,
       checkoutId: isFirst ? checkoutId || null : null,
       accountRef: accountRef || lease.unit.label,
+      shortcode: isFirst && shortcode ? String(shortcode) : null,
+      rawPayload: isFirst && rawPayload ? rawPayload : undefined,
       method,
       status: 'SUCCESS',
     };
@@ -131,14 +157,24 @@ async function applyPayment({
     }
   }
 
+  const periodsCovered = invoicesTouched.map((inv) => inv.period);
+  if (!silent) {
+    const open = await prisma.rentInvoice.findMany({
+      // Only months that have started — a prepaid part of next month isn't owed yet.
+      where: { leaseId: lease.id, status: { in: ['UNPAID', 'PARTIAL'] }, period: { lte: currentPeriod() } },
+    });
+    const balance = open.reduce((sum, inv) => sum + inv.amountDue - inv.amountPaid, 0);
+    await sendReceipt({ lease, amount, receipt, periodsCovered, balance });
+  }
+
   return {
     payment: payments[0],
     payments,
     invoice: invoicesTouched[0],
     invoices: invoicesTouched,
-    periodsCovered: invoicesTouched.map((inv) => inv.period),
+    periodsCovered,
     matched: true,
   };
 }
 
-module.exports = { applyPayment, resolveActiveLease };
+module.exports = { applyPayment, resolveActiveLease, normalizeRef };
